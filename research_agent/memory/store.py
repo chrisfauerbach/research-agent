@@ -59,6 +59,13 @@ class RunStore:
             return None
         return AgentState.model_validate_json(row[0])
 
+    def get_created_at(self, run_id: str) -> str | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT created_at FROM runs WHERE run_id = ?", (run_id,)
+            ).fetchone()
+        return row[0] if row else None
+
     def list_runs(self, limit: int = 20) -> list[dict]:
         with self._conn() as conn:
             rows = conn.execute(

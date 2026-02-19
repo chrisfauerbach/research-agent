@@ -120,11 +120,13 @@ async def get_run(run_id: str) -> dict:
     store = RunStore()
     state = store.get(run_id)
     if state is None:
-        return {"error": "Run not found"}
+        raise HTTPException(status_code=404, detail="Run not found")
     return {
         "run_id": state.run_id,
         "question": state.question,
         "report": state.report,
+        "audience": state.audience,
+        "created_at": store.get_created_at(run_id),
         "evidence_count": len(state.evidence),
         "iterations": state.iteration,
     }

@@ -26,6 +26,7 @@ export async function listRuns() {
 
 export async function getRun(runId) {
   const res = await fetch(`${API_BASE}/runs/${runId}`);
+  if (res.status === 404) throw new Error("Run not found");
   if (!res.ok) throw new Error(`API error ${res.status}`);
   return res.json();
 }
