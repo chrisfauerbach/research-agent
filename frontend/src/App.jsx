@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import ResearchForm from "./components/ResearchForm";
 import ReportView from "./components/ReportView";
 import RunHistory from "./components/RunHistory";
-import { submitResearch, listRuns, getRun } from "./api";
+import ProgressTracker from "./components/ProgressTracker";
+import { streamResearch, listRuns, getRun } from "./api";
 
 const MOBILE_BREAKPOINT = 768;
 
@@ -63,6 +64,8 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState(null);
   const [error, setError] = useState(null);
+  const [progress, setProgress] = useState(null);
+  const [planSteps, setPlanSteps] = useState([]);
 
   const [runs, setRuns] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -133,14 +136,20 @@ export default function App() {
     setLoading(true);
     setReport(null);
     setError(null);
+    setProgress(null);
+    setPlanSteps([]);
     try {
-      const data = await submitResearch({ question, audience, pdfFile });
-      setReport(data.report || JSON.stringify(data, null, 2));
+      const data = await streamResearch({ question, audience, pdfFile }, (eventType, eventData) => {
+        if (eventType === "status") setProgress(eventData);
+        if (eventType === "plan") setPlanSteps(eventData.steps || []);
+      });
+      setReport(data?.report || "Research completed but no report was generated.");
       refreshHistory();
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
+      setProgress(null);
     }
   }
 
@@ -196,12 +205,9 @@ export default function App() {
           <ResearchForm onSubmit={handleSubmit} disabled={loading} />
         )}
 
-        {loading && (
-          <p style={styles.spinner}>
-            {selectedRunId
-              ? "Loading report..."
-              : "Researching... this may take a few minutes."}
-          </p>
+        {loading && selectedRunId && <p style={styles.spinner}>Loading report...</p>}
+        {loading && !selectedRunId && (
+          <ProgressTracker progress={progress} planSteps={planSteps} />
         )}
         {error && <p style={styles.error}>Error: {error}</p>}
         {displayReport && <ReportView report={displayReport} />}
