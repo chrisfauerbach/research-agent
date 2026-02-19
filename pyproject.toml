@@ -1,0 +1,55 @@
+[project]
+name = "research-agent"
+version = "0.1.0"
+description = "Autonomous technical research agent powered by LangGraph and Ollama"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [{ name = "research-agent contributors" }]
+keywords = ["research", "agent", "langgraph", "ollama", "local-llm"]
+
+dependencies = [
+    "langgraph>=0.2,<1",
+    "langchain-core>=0.3,<1",
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.32,<1",
+    "typer>=0.15,<1",
+    "httpx>=0.28,<1",
+    "pydantic>=2.10,<3",
+    "pydantic-settings>=2.7,<3",
+    "duckduckgo-search>=7,<8",
+    "trafilatura>=2.0,<3",
+    "rich>=13,<14",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+    "pytest-asyncio>=0.24,<1",
+    "pytest-httpx>=0.35,<1",
+    "respx>=0.22,<1",
+    "ruff>=0.8,<1",
+    "mypy>=1.13,<2",
+]
+
+[project.scripts]
+research-agent = "research_agent.cli.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
