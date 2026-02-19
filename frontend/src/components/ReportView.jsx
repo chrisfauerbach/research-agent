@@ -1,24 +1,6 @@
-import { useEffect, useRef } from "react";
-import { marked } from "marked";
-import mermaid from "mermaid";
-
-mermaid.initialize({ startOnLoad: false, theme: "default", securityLevel: "loose" });
-
-marked.use({
-  renderer: {
-    code({ text, lang }) {
-      if (lang === "mermaid") {
-        return `<pre class="mermaid">${text}</pre>`;
-      }
-      const escaped = text
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-      const cls = lang ? ` class="language-${lang}"` : "";
-      return `<pre><code${cls}>${escaped}</code></pre>`;
-    },
-  },
-});
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import MermaidDiagram from "./MermaidDiagram";
 
 const styles = {
   container: {
@@ -30,20 +12,44 @@ const styles = {
   },
 };
 
+function stripWrappingFence(text) {
+  // LLMs often wrap markdown output in ```markdown ... ```
+  // Strip leading/trailing whitespace then remove outer fence if present
+  let trimmed = text.trim();
+  const match = trimmed.match(/^```(?:markdown|md)?\s*\n([\s\S]*)\n```$/);
+  return match ? match[1].trim() : trimmed;
+}
+
 export default function ReportView({ report }) {
-  const containerRef = useRef(null);
+  const content = stripWrappingFence(report);
 
-  useEffect(() => {
-    if (!containerRef.current) return;
-    containerRef.current.innerHTML = marked.parse(report);
+  return (
+    <div style={styles.container}>
+      <Markdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          code({ className, children, ...props }) {
+            const match = /language-(\w+)/.exec(className || "");
+            const language = match ? match[1] : null;
 
-    const mermaidNodes = containerRef.current.querySelectorAll(".mermaid");
-    if (mermaidNodes.length > 0) {
-      mermaid.run({ nodes: mermaidNodes }).catch((err) => {
-        console.warn("Mermaid render error:", err);
-      });
-    }
-  }, [report]);
+            if (language === "mermaid") {
+              return (
+                <MermaidDiagram
+                  chart={String(children).replace(/\n$/, "")}
+                />
+              );
+            }
 
-  return <div ref={containerRef} style={styles.container} />;
+            return (
+              <code className={className} {...props}>
+                {children}
+              </code>
+            );
+          },
+        }}
+      >
+        {content}
+      </Markdown>
+    </div>
+  );
 }

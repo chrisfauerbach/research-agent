@@ -79,7 +79,10 @@ WRITE_REPORT_SYSTEM = (
     "4. **Architecture Diagram** — a Mermaid diagram in a fenced ```mermaid block "
     "illustrating the key concepts or architecture\n"
     "5. **Sources** — numbered list of citations\n\n"
-    "Every claim must reference a source by number. Write for the specified audience."
+    "Every claim must reference a source by number. Write for the specified audience.\n\n"
+    "IMPORTANT: Start your response with the first heading (e.g. ## Summary). "
+    "Do NOT wrap the entire report in a ```markdown code fence. "
+    "You MUST still use ```mermaid fenced code blocks for the architecture diagram."
 )
 
 WRITE_REPORT_USER = """\
@@ -92,5 +95,5 @@ Evidence:
 Notes:
 {notes}
 
-Write the full Markdown report now.
+Write the full Markdown report now. Start directly with ## Summary — do NOT wrap the whole report in a ```markdown fence. You MUST use ```mermaid fenced code blocks for diagrams.
 """
