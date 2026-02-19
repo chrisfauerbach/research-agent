@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from research_agent.llm.client import OllamaClient
+from research_agent.llm.client import LLMResponse, OllamaClient
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ class LLMAdapter:
         system: str | None = None,
         temperature: float = 0.3,
         max_tokens: int = 4096,
-    ) -> str:
+    ) -> LLMResponse:
         return await self.client.generate(
             prompt, system=system, temperature=temperature, max_tokens=max_tokens
         )

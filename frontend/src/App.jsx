@@ -3,6 +3,7 @@ import ResearchForm from "./components/ResearchForm";
 import ReportView from "./components/ReportView";
 import RunHistory from "./components/RunHistory";
 import ProgressTracker from "./components/ProgressTracker";
+import MetricsPanel from "./components/MetricsPanel";
 import { streamResearch, listRuns, getRun } from "./api";
 
 const MOBILE_BREAKPOINT = 768;
@@ -67,6 +68,8 @@ export default function App() {
   const [progress, setProgress] = useState(null);
   const [planSteps, setPlanSteps] = useState([]);
 
+  const [metrics, setMetrics] = useState(null);
+
   const [runs, setRuns] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [selectedRunId, setSelectedRunId] = useState(null);
@@ -127,6 +130,7 @@ export default function App() {
     setSelectedRunData(null);
     setReport(null);
     setError(null);
+    setMetrics(null);
   }
 
   // Handle form submission
@@ -138,10 +142,12 @@ export default function App() {
     setError(null);
     setProgress(null);
     setPlanSteps([]);
+    setMetrics(null);
     try {
       const data = await streamResearch({ question, audience, pdfFile }, (eventType, eventData) => {
         if (eventType === "status") setProgress(eventData);
         if (eventType === "plan") setPlanSteps(eventData.steps || []);
+        if (eventType === "complete") setMetrics(eventData.metrics || null);
       });
       setReport(data?.report || "Research completed but no report was generated.");
       refreshHistory();
@@ -153,8 +159,9 @@ export default function App() {
     }
   }
 
-  // Determine which report to display
+  // Determine which report / metrics to display
   const displayReport = selectedRunData ? selectedRunData.report : report;
+  const displayMetrics = selectedRunData ? selectedRunData.metrics : metrics;
 
   // Sidebar component (same for both layouts, wrapped differently)
   const sidebar = (
@@ -211,6 +218,7 @@ export default function App() {
         )}
         {error && <p style={styles.error}>Error: {error}</p>}
         {displayReport && <ReportView report={displayReport} />}
+        {displayReport && <MetricsPanel metrics={displayMetrics} />}
       </div>
     </div>
   );

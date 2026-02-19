@@ -70,6 +70,20 @@ def test_status_from_state_defaults():
     assert result["tool"] == ""
     assert result["evidence_count"] == 0
     assert result["confidence"] == 0.0
+    assert "metrics" not in result
+
+
+def test_status_from_state_includes_metrics():
+    from research_agent.graph.state import LLMCallMetric, RunMetrics
+
+    metrics = RunMetrics(
+        llm_calls=[LLMCallMetric(node="plan", prompt_tokens=100, completion_tokens=50)]
+    )
+    state = {"status": "acting", "metrics": metrics}
+    result = _status_from_state("plan", state)
+    assert "metrics" in result
+    assert result["metrics"]["total_prompt_tokens"] == 100
+    assert result["metrics"]["total_completion_tokens"] == 50
 
 
 # ---------------------------------------------------------------------------
@@ -200,12 +214,8 @@ def test_run_research_json_path():
     )
 
     with (
-        patch(
-            "research_agent.api.routers.research.build_graph"
-        ) as mock_build,
-        patch(
-            "research_agent.api.routers.research.RunStore"
-        ) as mock_store_cls,
+        patch("research_agent.api.routers.research.build_graph") as mock_build,
+        patch("research_agent.api.routers.research.RunStore") as mock_store_cls,
         patch(
             "research_agent.api.routers.research.render_report",
             return_value="## Rendered Report",
@@ -246,12 +256,8 @@ def test_run_research_sse_path():
         yield {"plan": {"plan": ["1. [web_search] test"], "status": "acting"}}
 
     with (
-        patch(
-            "research_agent.api.routers.research.build_graph"
-        ) as mock_build,
-        patch(
-            "research_agent.api.routers.research.RunStore"
-        ) as mock_store_cls,
+        patch("research_agent.api.routers.research.build_graph") as mock_build,
+        patch("research_agent.api.routers.research.RunStore") as mock_store_cls,
         patch(
             "research_agent.api.routers.research.render_report",
             return_value="## Rendered",
@@ -314,6 +320,8 @@ def test_get_run_found():
     body = resp.json()
     assert body["run_id"] == "found1"
     assert body["evidence_count"] == 1
+    assert "metrics" in body
+    assert body["metrics"]["total_llm_calls"] == 0  # empty RunMetrics default
 
 
 def test_get_run_not_found():

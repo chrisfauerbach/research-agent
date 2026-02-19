@@ -14,7 +14,20 @@ from research_agent.graph.nodes import (
     write_report_node,
 )
 from research_agent.graph.state import AgentState
+from research_agent.llm.client import LLMResponse
 from research_agent.tools.base import EvidenceItem, ToolResult
+
+
+def _make_llm_response(text: str) -> LLMResponse:
+    """Build an LLMResponse with realistic token/timing data."""
+    return LLMResponse(
+        text=text,
+        prompt_eval_count=100,
+        eval_count=50,
+        total_duration_ns=500_000_000,
+        prompt_eval_duration_ns=200_000_000,
+        eval_duration_ns=300_000_000,
+    )
 
 
 def _make_state(**overrides) -> AgentState:
@@ -38,11 +51,15 @@ async def test_plan_node_with_pdf_context(mock_ollama):
     result = await plan_node(state)
     assert "plan" in result
     assert len(result["plan"]) > 0
+    assert "metrics" in result
+    assert len(result["metrics"].llm_calls) == 1
+    assert result["metrics"].llm_calls[0].node == "plan"
+    assert result["metrics"].llm_calls[0].prompt_tokens == 100
 
 
 @pytest.mark.asyncio
 async def test_plan_node_empty_llm_response(mock_ollama):
-    mock_ollama.generate = AsyncMock(return_value="")
+    mock_ollama.generate = AsyncMock(return_value=_make_llm_response(""))
     import research_agent.llm.adapter as adapter_mod
     from research_agent.llm.adapter import LLMAdapter
 
@@ -75,7 +92,9 @@ async def test_act_node_index_beyond_plan(mock_ollama):
 @pytest.mark.asyncio
 async def test_act_node_unknown_tool(mock_ollama):
     # LLM returns an unknown tool name
-    mock_ollama.generate = AsyncMock(return_value="TOOL: nonexistent_tool\nQUERY: test")
+    mock_ollama.generate = AsyncMock(
+        return_value=_make_llm_response("TOOL: nonexistent_tool\nQUERY: test")
+    )
     import research_agent.llm.adapter as adapter_mod
     from research_agent.llm.adapter import LLMAdapter
 
@@ -166,7 +185,7 @@ async def test_reflect_node_continue_with_remaining_steps(mock_ollama):
 @pytest.mark.asyncio
 async def test_reflect_node_continue_with_new_steps(mock_ollama):
     mock_ollama.generate = AsyncMock(
-        return_value=(
+        return_value=_make_llm_response(
             "DECISION: CONTINUE\n"
             "REASON: Need more data.\n"
             "NEW_STEPS: 4. [web_search] extra query\n"
@@ -192,7 +211,7 @@ async def test_reflect_node_continue_with_new_steps(mock_ollama):
 @pytest.mark.asyncio
 async def test_reflect_node_stop_with_bad_confidence(mock_ollama):
     mock_ollama.generate = AsyncMock(
-        return_value="DECISION: STOP\nCONFIDENCE: not_a_number\nREASON: Done."
+        return_value=_make_llm_response("DECISION: STOP\nCONFIDENCE: not_a_number\nREASON: Done.")
     )
     import research_agent.llm.adapter as adapter_mod
     from research_agent.llm.adapter import LLMAdapter

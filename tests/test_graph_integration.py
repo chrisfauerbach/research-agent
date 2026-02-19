@@ -30,7 +30,10 @@ async def test_full_graph_with_mock_ollama(mock_ollama: AsyncMock) -> None:
 
     with patch(
         "research_agent.graph.nodes.TOOL_REGISTRY",
-        {"web_search": _make_mock_tool_cls(mock_tool_result), "fetch_url": _make_mock_tool_cls(mock_tool_result)},
+        {
+            "web_search": _make_mock_tool_cls(mock_tool_result),
+            "fetch_url": _make_mock_tool_cls(mock_tool_result),
+        },
     ):
         graph = build_graph()
         initial = AgentState(
@@ -45,6 +48,9 @@ async def test_full_graph_with_mock_ollama(mock_ollama: AsyncMock) -> None:
     assert state.status == "done"
     assert state.report != ""
     assert state.iteration >= 1
+    assert state.metrics.total_llm_calls > 0
+    assert len(state.metrics.node_timings) > 0
+    assert state.metrics.total_prompt_tokens > 0
 
 
 def _make_mock_tool_cls(result: ToolResult):  # type: ignore[no-untyped-def]

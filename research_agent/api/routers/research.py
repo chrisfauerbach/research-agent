@@ -31,6 +31,7 @@ class ResearchResponse(BaseModel):
     report: str
     evidence_count: int
     iterations: int
+    metrics: dict | None = None
 
 
 async def _build_initial_state(
@@ -95,9 +96,18 @@ def _sse_event(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
+def _summarize_metrics(metrics_data: dict | None) -> dict | None:
+    """Summarize metrics from a raw state dict (works on plain dicts from LangGraph)."""
+    if not metrics_data:
+        return None
+    from research_agent.graph.state import RunMetrics
+
+    return RunMetrics.model_validate(metrics_data).summary()
+
+
 def _status_from_state(node: str, state: dict) -> dict:
     """Build a status payload from node name and current state dict."""
-    return {
+    payload = {
         "node": node,
         "status": state.get("status", ""),
         "iteration": state.get("iteration", 0),
@@ -107,6 +117,12 @@ def _status_from_state(node: str, state: dict) -> dict:
         "evidence_count": len(state.get("evidence", [])),
         "confidence": state.get("confidence", 0.0),
     }
+    metrics = state.get("metrics")
+    if metrics:
+        payload["metrics"] = _summarize_metrics(
+            metrics if isinstance(metrics, dict) else metrics.model_dump()
+        )
+    return payload
 
 
 async def _stream_research(initial_state: AgentState, run_id: str) -> AsyncGenerator[str, None]:
@@ -146,6 +162,7 @@ async def _stream_research(initial_state: AgentState, run_id: str) -> AsyncGener
                 "report": final_state.report,
                 "evidence_count": len(final_state.evidence),
                 "iterations": final_state.iteration,
+                "metrics": final_state.metrics.summary(),
             },
         )
     except Exception as exc:
@@ -206,6 +223,7 @@ async def run_research(
         report=final_state.report,
         evidence_count=len(final_state.evidence),
         iterations=final_state.iteration,
+        metrics=final_state.metrics.summary(),
     )
 
 
@@ -229,4 +247,5 @@ async def get_run(run_id: str) -> dict:
         "created_at": store.get_created_at(run_id),
         "evidence_count": len(state.evidence),
         "iterations": state.iteration,
+        "metrics": state.metrics.summary(),
     }

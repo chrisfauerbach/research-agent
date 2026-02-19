@@ -17,24 +17,48 @@ from research_agent.graph.prompts import (
     WRITE_REPORT_SYSTEM,
     WRITE_REPORT_USER,
 )
-from research_agent.graph.state import AgentState
+from research_agent.graph.state import (
+    AgentState,
+    LLMCallMetric,
+    NodeTimingMetric,
+    RunMetrics,
+    ToolCallMetric,
+)
 from research_agent.llm.adapter import get_llm
+from research_agent.llm.client import LLMResponse
 from research_agent.tools import TOOL_REGISTRY
 
 logger = logging.getLogger(__name__)
 
 
+def _llm_metric(node: str, response: LLMResponse) -> LLMCallMetric:
+    """Build an LLMCallMetric from an LLMResponse."""
+    return LLMCallMetric(
+        node=node,
+        prompt_tokens=response.prompt_eval_count,
+        completion_tokens=response.eval_count,
+        duration_ms=response.total_duration_ns / 1_000_000,
+    )
+
+
+def _copy_metrics(state: AgentState) -> RunMetrics:
+    """Return a mutable copy of the current run metrics."""
+    return RunMetrics(
+        llm_calls=list(state.metrics.llm_calls),
+        tool_calls=list(state.metrics.tool_calls),
+        node_timings=list(state.metrics.node_timings),
+    )
+
+
 async def plan_node(state: AgentState) -> dict:
     """Generate an initial research plan."""
+    node_start = time.time()
     logger.info("[plan_node] Generating plan for: %s", state.question)
     llm = get_llm()
 
     pdf_section = ""
     if state.pdf_context:
-        pdf_section = (
-            f"\nReference document ({state.pdf_filename}):\n"
-            f"{state.pdf_context[:8000]}\n"
-        )
+        pdf_section = f"\nReference document ({state.pdf_filename}):\n{state.pdf_context[:8000]}\n"
 
     prompt = PLAN_USER.format(
         question=state.question,
@@ -42,7 +66,8 @@ async def plan_node(state: AgentState) -> dict:
         desired_depth=state.desired_depth,
         pdf_section=pdf_section,
     )
-    raw = await llm.query(prompt, system=PLAN_SYSTEM)
+    response = await llm.query(prompt, system=PLAN_SYSTEM)
+    raw = response.text
 
     steps: list[str] = []
     for line in raw.strip().splitlines():
@@ -53,21 +78,33 @@ async def plan_node(state: AgentState) -> dict:
     if not steps:
         steps = [f"1. [web_search] {state.question}"]
 
+    metrics = _copy_metrics(state)
+    metrics.llm_calls.append(_llm_metric("plan", response))
+    metrics.node_timings.append(
+        NodeTimingMetric(node="plan", duration_ms=(time.time() - node_start) * 1000)
+    )
+
     logger.info("[plan_node] Plan has %d steps", len(steps))
     return {
         "plan": steps,
         "current_step_index": 0,
         "status": "acting",
         "start_time": state.start_time or time.time(),
+        "metrics": metrics,
     }
 
 
 async def act_node(state: AgentState) -> dict:
     """Select and invoke the tool for the current plan step."""
+    node_start = time.time()
     logger.info("[act_node] Step %d/%d", state.current_step_index + 1, len(state.plan))
 
     if state.current_step_index >= len(state.plan):
-        return {"status": "reflecting", "last_tool_result": ""}
+        metrics = _copy_metrics(state)
+        metrics.node_timings.append(
+            NodeTimingMetric(node="act", duration_ms=(time.time() - node_start) * 1000)
+        )
+        return {"status": "reflecting", "last_tool_result": "", "metrics": metrics}
 
     step = state.plan[state.current_step_index]
     llm = get_llm()
@@ -78,7 +115,8 @@ async def act_node(state: AgentState) -> dict:
         evidence_count=len(state.evidence),
         notes_summary=notes_summary,
     )
-    raw = await llm.query(prompt, system=ACT_SYSTEM)
+    response = await llm.query(prompt, system=ACT_SYSTEM)
+    raw = response.text
 
     tool_name = "web_search"
     query = state.question
@@ -94,7 +132,9 @@ async def act_node(state: AgentState) -> dict:
         tool_cls = TOOL_REGISTRY["web_search"]
 
     tool = tool_cls()
+    tool_start = time.time()
     result = await tool.run(query=query)
+    tool_duration_ms = (time.time() - tool_start) * 1000
 
     new_evidence = list(state.evidence) + result.evidence
     # Deduplicate bibliography by URL
@@ -104,6 +144,20 @@ async def act_node(state: AgentState) -> dict:
         if key not in bib:
             bib[key] = ev
 
+    metrics = _copy_metrics(state)
+    metrics.llm_calls.append(_llm_metric("act", response))
+    metrics.tool_calls.append(
+        ToolCallMetric(
+            tool_name=tool_name,
+            query=query,
+            duration_ms=tool_duration_ms,
+            success=result.success,
+        )
+    )
+    metrics.node_timings.append(
+        NodeTimingMetric(node="act", duration_ms=(time.time() - node_start) * 1000)
+    )
+
     return {
         "last_tool_result": result.data,
         "pending_tool": tool_name,
@@ -112,32 +166,45 @@ async def act_node(state: AgentState) -> dict:
         "bibliography": bib,
         "tool_calls_made": state.tool_calls_made + 1,
         "status": "observing",
+        "metrics": metrics,
     }
 
 
 async def observe_node(state: AgentState) -> dict:
     """Summarise the latest tool output into a note."""
+    node_start = time.time()
     logger.info("[observe_node] Summarising tool output")
     llm = get_llm()
 
-    step = state.plan[state.current_step_index] if state.current_step_index < len(state.plan) else ""
+    step = (
+        state.plan[state.current_step_index] if state.current_step_index < len(state.plan) else ""
+    )
     prompt = OBSERVE_USER.format(
         step=step,
         tool=state.pending_tool,
         tool_output=state.last_tool_result[:3000],
     )
-    summary = await llm.query(prompt, system=OBSERVE_SYSTEM)
+    response = await llm.query(prompt, system=OBSERVE_SYSTEM)
 
-    new_notes = list(state.notes) + [summary.strip()]
+    new_notes = list(state.notes) + [response.text.strip()]
+
+    metrics = _copy_metrics(state)
+    metrics.llm_calls.append(_llm_metric("observe", response))
+    metrics.node_timings.append(
+        NodeTimingMetric(node="observe", duration_ms=(time.time() - node_start) * 1000)
+    )
+
     return {
         "notes": new_notes,
         "current_step_index": state.current_step_index + 1,
         "status": "reflecting",
+        "metrics": metrics,
     }
 
 
 async def reflect_node(state: AgentState) -> dict:
     """Decide whether to continue or stop."""
+    node_start = time.time()
     logger.info(
         "[reflect_node] Iteration %d, evidence=%d, steps=%d/%d",
         state.iteration,
@@ -160,11 +227,24 @@ async def reflect_node(state: AgentState) -> dict:
         if tool_limit_exceeded:
             reason.append("tool call limit reached")
         logger.info("[reflect_node] Forced stop: %s", ", ".join(reason))
-        return {"should_stop": True, "status": "writing", "iteration": state.iteration + 1}
+        metrics = _copy_metrics(state)
+        metrics.node_timings.append(
+            NodeTimingMetric(node="reflect", duration_ms=(time.time() - node_start) * 1000)
+        )
+        return {
+            "should_stop": True,
+            "status": "writing",
+            "iteration": state.iteration + 1,
+            "metrics": metrics,
+        }
 
     # If there are remaining plan steps, keep going
     if state.current_step_index < len(state.plan):
-        return {"status": "acting", "iteration": state.iteration + 1}
+        metrics = _copy_metrics(state)
+        metrics.node_timings.append(
+            NodeTimingMetric(node="reflect", duration_ms=(time.time() - node_start) * 1000)
+        )
+        return {"status": "acting", "iteration": state.iteration + 1, "metrics": metrics}
 
     # Ask the LLM whether we have enough evidence
     llm = get_llm()
@@ -177,7 +257,14 @@ async def reflect_node(state: AgentState) -> dict:
         evidence_count=len(state.evidence),
         notes="\n".join(f"- {n}" for n in state.notes[-10:]),
     )
-    raw = await llm.query(prompt, system=REFLECT_SYSTEM)
+    response = await llm.query(prompt, system=REFLECT_SYSTEM)
+    raw = response.text
+
+    metrics = _copy_metrics(state)
+    metrics.llm_calls.append(_llm_metric("reflect", response))
+    metrics.node_timings.append(
+        NodeTimingMetric(node="reflect", duration_ms=(time.time() - node_start) * 1000)
+    )
 
     if "DECISION: STOP" in raw.upper():
         confidence = 0.7
@@ -192,6 +279,7 @@ async def reflect_node(state: AgentState) -> dict:
             "confidence": confidence,
             "status": "writing",
             "iteration": state.iteration + 1,
+            "metrics": metrics,
         }
 
     # CONTINUE — parse optional new steps
@@ -214,11 +302,13 @@ async def reflect_node(state: AgentState) -> dict:
         "plan": plan,
         "status": "acting",
         "iteration": state.iteration + 1,
+        "metrics": metrics,
     }
 
 
 async def write_report_node(state: AgentState) -> dict:
     """Produce the final Markdown report."""
+    node_start = time.time()
     logger.info("[write_report_node] Writing report with %d evidence items", len(state.evidence))
     llm = get_llm()
 
@@ -236,10 +326,7 @@ async def write_report_node(state: AgentState) -> dict:
 
     pdf_section = ""
     if state.pdf_context:
-        pdf_section = (
-            f"\nReference document ({state.pdf_filename}):\n"
-            f"{state.pdf_context[:20000]}\n"
-        )
+        pdf_section = f"\nReference document ({state.pdf_filename}):\n{state.pdf_context[:20000]}\n"
 
     prompt = WRITE_REPORT_USER.format(
         question=state.question,
@@ -248,6 +335,12 @@ async def write_report_node(state: AgentState) -> dict:
         notes=notes_text or "(no notes)",
         pdf_section=pdf_section,
     )
-    report = await llm.query(prompt, system=WRITE_REPORT_SYSTEM, max_tokens=8192)
+    response = await llm.query(prompt, system=WRITE_REPORT_SYSTEM, max_tokens=8192)
 
-    return {"report": report.strip(), "status": "done"}
+    metrics = _copy_metrics(state)
+    metrics.llm_calls.append(_llm_metric("write_report", response))
+    metrics.node_timings.append(
+        NodeTimingMetric(node="write_report", duration_ms=(time.time() - node_start) * 1000)
+    )
+
+    return {"report": response.text.strip(), "status": "done", "metrics": metrics}

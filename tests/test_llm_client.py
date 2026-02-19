@@ -8,7 +8,7 @@ import httpx
 import pytest
 import respx
 
-from research_agent.llm.client import OllamaClient
+from research_agent.llm.client import LLMResponse, OllamaClient
 
 
 def test_init_defaults():
@@ -39,7 +39,7 @@ async def test_generate_success():
     client = OllamaClient(host="http://test:11434", model="test-model", timeout=10)
     result = await client.generate("Say hello")
 
-    assert result == "Hello world"
+    assert result.text == "Hello world"
     assert route.called
 
 
@@ -52,7 +52,7 @@ async def test_generate_with_system():
     client = OllamaClient(host="http://test:11434", model="m", timeout=10)
     result = await client.generate("prompt", system="You are helpful")
 
-    assert result == "sys reply"
+    assert result.text == "sys reply"
     # Verify system was included in the request
     request_body = route.calls[0].request.content
     import json
@@ -68,7 +68,7 @@ async def test_generate_no_system():
         return_value=httpx.Response(200, json={"response": "no sys"})
     )
     client = OllamaClient(host="http://test:11434", model="m", timeout=10)
-    result = await client.generate("prompt")
+    await client.generate("prompt")
 
     import json
 
@@ -79,12 +79,10 @@ async def test_generate_no_system():
 @pytest.mark.asyncio
 @respx.mock
 async def test_generate_empty_response():
-    respx.post("http://test:11434/api/generate").mock(
-        return_value=httpx.Response(200, json={})
-    )
+    respx.post("http://test:11434/api/generate").mock(return_value=httpx.Response(200, json={}))
     client = OllamaClient(host="http://test:11434", model="m", timeout=10)
     result = await client.generate("prompt")
-    assert result == ""
+    assert result.text == ""
 
 
 @pytest.mark.asyncio
@@ -96,3 +94,32 @@ async def test_generate_http_error():
     client = OllamaClient(host="http://test:11434", model="m", timeout=10)
     with pytest.raises(httpx.HTTPStatusError):
         await client.generate("prompt")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_generate_returns_metrics():
+    """Verify that Ollama's token/duration fields are extracted into LLMResponse."""
+    respx.post("http://test:11434/api/generate").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "response": "hello",
+                "prompt_eval_count": 42,
+                "eval_count": 17,
+                "total_duration": 1_000_000_000,
+                "prompt_eval_duration": 400_000_000,
+                "eval_duration": 600_000_000,
+            },
+        )
+    )
+    client = OllamaClient(host="http://test:11434", model="m", timeout=10)
+    result = await client.generate("prompt")
+
+    assert isinstance(result, LLMResponse)
+    assert result.text == "hello"
+    assert result.prompt_eval_count == 42
+    assert result.eval_count == 17
+    assert result.total_duration_ns == 1_000_000_000
+    assert result.prompt_eval_duration_ns == 400_000_000
+    assert result.eval_duration_ns == 600_000_000

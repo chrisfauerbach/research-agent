@@ -132,6 +132,17 @@ export default function ProgressTracker({ progress, planSteps }) {
       value: `${Math.round(progress.confidence * 100)}%`,
     });
   }
+  if (progress.metrics) {
+    const m = progress.metrics;
+    if (m.total_prompt_tokens > 0 || m.total_completion_tokens > 0) {
+      const total = (m.total_prompt_tokens || 0) + (m.total_completion_tokens || 0);
+      details.push({ label: "Tokens", value: total >= 1000 ? `${(total / 1000).toFixed(1)}k` : total });
+    }
+    if (m.total_llm_time_ms > 0) {
+      const s = m.total_llm_time_ms / 1000;
+      details.push({ label: "LLM Time", value: `${s.toFixed(1)}s` });
+    }
+  }
 
   return (
     <div style={styles.container}>
