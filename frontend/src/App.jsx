@@ -20,12 +20,12 @@ export default function App() {
   const [report, setReport] = useState(null);
   const [error, setError] = useState(null);
 
-  async function handleSubmit({ question, audience }) {
+  async function handleSubmit({ question, audience, pdfFile }) {
     setLoading(true);
     setReport(null);
     setError(null);
     try {
-      const data = await submitResearch({ question, audience });
+      const data = await submitResearch({ question, audience, pdfFile });
       setReport(data.report || JSON.stringify(data, null, 2));
     } catch (err) {
       setError(err.message);

@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     timebox_minutes: int = 5
     tool_call_limit: int = 30
 
+    # PDF upload limits
+    pdf_max_size_mb: int = 20
+    pdf_max_extract_chars: int = 40_000
+
     # Persistence
     db_path: str = "runs/research_agent.db"
 

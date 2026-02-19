@@ -20,6 +20,10 @@ class AgentState(BaseModel):
     timebox_minutes: int = 5
     tool_call_limit: int = 30
 
+    # Optional PDF reference document
+    pdf_context: str = ""
+    pdf_filename: str = ""
+
     # Tracking
     run_id: str = ""
     iteration: int = 0

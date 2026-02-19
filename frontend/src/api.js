@@ -1,10 +1,15 @@
 const API_BASE = "/api";
 
-export async function submitResearch({ question, audience }) {
+export async function submitResearch({ question, audience, pdfFile }) {
+  const form = new FormData();
+  form.append("question", question);
+  form.append("audience", audience);
+  if (pdfFile) {
+    form.append("pdf_file", pdfFile);
+  }
   const res = await fetch(`${API_BASE}/research`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question, audience }),
+    body: form,
   });
   if (!res.ok) {
     const text = await res.text();

@@ -5,6 +5,9 @@ PLAN_SYSTEM = (
     "Given a research question and optional constraints, produce a numbered plan "
     "of 3–7 concrete steps the agent should follow to gather evidence and answer the question. "
     "Each step should name a tool (web_search, fetch_url, python_sandbox, local_docs) and a query. "
+    "A reference document may be provided alongside the question — you do NOT need a tool to "
+    "access it; its content is already available. Use the tools to find additional or "
+    "corroborating information. "
     "Output ONLY the numbered list, one step per line."
 )
 
@@ -12,7 +15,7 @@ PLAN_USER = """\
 Research question: {question}
 Audience: {audience}
 Desired depth: {desired_depth}
-
+{pdf_section}
 Produce 3–7 research steps. Format each line as:
 <step number>. [tool_name] <query or action description>
 """
@@ -79,7 +82,8 @@ WRITE_REPORT_SYSTEM = (
     "4. **Architecture Diagram** — a Mermaid diagram in a fenced ```mermaid block "
     "illustrating the key concepts or architecture\n"
     "5. **Sources** — numbered list of citations\n\n"
-    "Every claim must reference a source by number. Write for the specified audience.\n\n"
+    "Every claim must reference a source by number. Write for the specified audience. "
+    "If a reference document was provided, treat it as a primary source and cite it.\n\n"
     "IMPORTANT: Start your response with the first heading (e.g. ## Summary). "
     "Do NOT wrap the entire report in a ```markdown code fence. "
     "You MUST still use ```mermaid fenced code blocks for the architecture diagram."
@@ -88,7 +92,7 @@ WRITE_REPORT_SYSTEM = (
 WRITE_REPORT_USER = """\
 Research question: {question}
 Audience: {audience}
-
+{pdf_section}
 Evidence:
 {evidence}
 

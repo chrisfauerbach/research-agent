@@ -29,10 +29,18 @@ async def plan_node(state: AgentState) -> dict:
     logger.info("[plan_node] Generating plan for: %s", state.question)
     llm = get_llm()
 
+    pdf_section = ""
+    if state.pdf_context:
+        pdf_section = (
+            f"\nReference document ({state.pdf_filename}):\n"
+            f"{state.pdf_context[:8000]}\n"
+        )
+
     prompt = PLAN_USER.format(
         question=state.question,
         audience=state.audience,
         desired_depth=state.desired_depth,
+        pdf_section=pdf_section,
     )
     raw = await llm.query(prompt, system=PLAN_SYSTEM)
 
@@ -226,11 +234,19 @@ async def write_report_node(state: AgentState) -> dict:
 
     notes_text = "\n".join(f"- {n}" for n in state.notes)
 
+    pdf_section = ""
+    if state.pdf_context:
+        pdf_section = (
+            f"\nReference document ({state.pdf_filename}):\n"
+            f"{state.pdf_context[:20000]}\n"
+        )
+
     prompt = WRITE_REPORT_USER.format(
         question=state.question,
         audience=state.audience,
         evidence=evidence_text or "(no external evidence collected)",
         notes=notes_text or "(no notes)",
+        pdf_section=pdf_section,
     )
     report = await llm.query(prompt, system=WRITE_REPORT_SYSTEM, max_tokens=8192)
 
