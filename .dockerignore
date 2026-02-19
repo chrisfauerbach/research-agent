@@ -12,4 +12,6 @@ venv/
 htmlcov/
 *.db
 runs/
+frontend/node_modules/
+frontend/dist/
 .env

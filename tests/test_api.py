@@ -15,8 +15,8 @@ def test_health() -> None:
     assert resp.json()["status"] == "ok"
 
 
-def test_index_returns_html() -> None:
+def test_index_returns_json() -> None:
     client = TestClient(app)
     resp = client.get("/")
     assert resp.status_code == 200
-    assert "Research Agent" in resp.text
+    assert "Research Agent" in resp.json()["message"]

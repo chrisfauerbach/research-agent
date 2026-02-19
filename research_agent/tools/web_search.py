@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
 from duckduckgo_search import DDGS
+from duckduckgo_search.exceptions import RatelimitException
 
 from research_agent.tools.base import BaseTool, EvidenceItem, ToolResult
 
 logger = logging.getLogger(__name__)
+
+MAX_RETRIES = 3
+RETRY_BACKOFF_SECONDS = [2, 5, 10]
 
 
 class WebSearchTool(BaseTool):
@@ -21,11 +26,27 @@ class WebSearchTool(BaseTool):
 
     async def run(self, *, query: str, **kwargs: Any) -> ToolResult:
         logger.info("WebSearch: %s", query)
-        try:
-            results = DDGS().text(query, max_results=self.max_results)
-        except Exception as exc:
-            logger.warning("WebSearch failed: %s", exc)
-            return ToolResult(tool=self.name, success=False, data=str(exc))
+        results: list[dict[str, str]] = []
+        for attempt in range(MAX_RETRIES):
+            try:
+                results = DDGS().text(query, max_results=self.max_results)
+                break
+            except RatelimitException:
+                delay = RETRY_BACKOFF_SECONDS[attempt]
+                logger.warning(
+                    "WebSearch rate-limited (attempt %d/%d), retrying in %ds",
+                    attempt + 1,
+                    MAX_RETRIES,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+            except Exception as exc:
+                logger.warning("WebSearch failed: %s", exc)
+                return ToolResult(tool=self.name, success=False, data=str(exc))
+        else:
+            msg = f"WebSearch rate-limited after {MAX_RETRIES} retries"
+            logger.warning(msg)
+            return ToolResult(tool=self.name, success=False, data=msg)
 
         evidence: list[EvidenceItem] = []
         lines: list[str] = []

@@ -8,7 +8,7 @@ Given a research question, the agent follows a **Plan → Act → Observe → Re
 
 ```
 research_agent/
-├── api/          # FastAPI app + routers
+├── api/          # FastAPI app (pure JSON API) + routers
 ├── cli/          # Typer CLI
 ├── graph/        # LangGraph state machine (plan/act/observe/reflect/write)
 ├── llm/          # Ollama HTTP client + LLM adapter
@@ -16,6 +16,17 @@ research_agent/
 ├── memory/       # SQLite persistence for runs
 ├── report/       # Markdown + Mermaid report rendering
 └── util/         # Logging helpers
+frontend/
+├── src/
+│   ├── App.jsx               # Main app component
+│   ├── api.js                # API client
+│   └── components/
+│       ├── ResearchForm.jsx  # Question form
+│       └── ReportView.jsx    # Markdown + Mermaid report renderer
+├── Dockerfile                # Multi-stage: node build → nginx serve
+├── nginx.conf                # Static files + /api/ proxy + SPA fallback
+├── index.html                # Vite entry point
+└── vite.config.js            # Vite config with dev proxy
 ```
 
 ### Agent Loop
@@ -69,7 +80,7 @@ curl -X POST http://localhost:8000/api/research \
 
 **Web UI:**
 
-Open [http://localhost:8000](http://localhost:8000) in your browser.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## Configuration
 
@@ -113,7 +124,7 @@ Options:
 | `GET` | `/api/runs` | List previous runs |
 | `GET` | `/api/runs/{run_id}` | Get a specific run result |
 | `GET` | `/health` | Health check |
-| `GET` | `/` | Web UI |
+| `GET` | `/` | API info (JSON) |
 
 ### POST /api/research
 
@@ -126,6 +137,16 @@ Options:
   "timebox_minutes": 5
 }
 ```
+
+## Docker Services
+
+| Service | Port | Description |
+|---|---|---|
+| `ollama` | 11434 | Ollama model server (GPU-accelerated) |
+| `api` | 8000 | FastAPI backend (pure JSON API) |
+| `frontend` | 3000 | React SPA served by nginx |
+
+The frontend nginx container proxies `/api/` requests to the backend, so all traffic can go through port 3000.
 
 ## Tools
 
