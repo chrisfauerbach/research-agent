@@ -8,7 +8,7 @@ Given a research question, the agent follows a **Plan → Act → Observe → Re
 
 ```
 research_agent/
-├── api/          # FastAPI app (pure JSON API) + routers
+├── api/          # FastAPI app (JSON + SSE streaming API) + routers
 ├── cli/          # Typer CLI
 ├── graph/        # LangGraph state machine (plan/act/observe/reflect/write)
 ├── llm/          # Ollama HTTP client + LLM adapter
@@ -19,12 +19,15 @@ research_agent/
 frontend/
 ├── src/
 │   ├── App.jsx               # Main app component
-│   ├── api.js                # API client
+│   ├── api.js                # API client (SSE streaming + JSON)
 │   └── components/
-│       ├── ResearchForm.jsx  # Question form
-│       └── ReportView.jsx    # Markdown + Mermaid report renderer
+│       ├── ResearchForm.jsx  # Question form + PDF upload
+│       ├── ReportView.jsx    # Markdown + Mermaid report renderer
+│       ├── ProgressTracker.jsx # Real-time research progress pipeline
+│       ├── MermaidDiagram.jsx  # Mermaid rendering with sanitization
+│       └── RunHistory.jsx    # Sidebar for past research runs
 ├── Dockerfile                # Multi-stage: node build → nginx serve
-├── nginx.conf                # Static files + /api/ proxy + SPA fallback
+├── nginx.conf                # Static files + /api/ proxy (SSE-ready) + SPA fallback
 ├── index.html                # Vite entry point
 └── vite.config.js            # Vite config with dev proxy
 ```
@@ -80,7 +83,7 @@ curl -X POST http://localhost:8000/api/research \
 
 **Web UI:**
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [http://localhost:3000](http://localhost:3000) in your browser. The UI streams real-time progress updates as the agent works — you'll see each phase (Plan → Act → Observe → Reflect → Write) light up, along with the current iteration, active tool, evidence count, and plan steps.
 
 ## Configuration
 
@@ -120,7 +123,7 @@ Options:
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/research` | Start a research run |
+| `POST` | `/api/research` | Start a research run (JSON or SSE streaming) |
 | `GET` | `/api/runs` | List previous runs |
 | `GET` | `/api/runs/{run_id}` | Get a specific run result |
 | `GET` | `/health` | Health check |
@@ -128,15 +131,24 @@ Options:
 
 ### POST /api/research
 
-```json
-{
-  "question": "Your research question",
-  "audience": "engineer",
-  "desired_depth": "thorough",
-  "max_iters": 6,
-  "timebox_minutes": 5
-}
+Accepts `multipart/form-data` with fields: `question` (required), `audience`, `desired_depth`, `max_iters`, `timebox_minutes`, `pdf_file` (optional PDF upload).
+
+**JSON response** (default):
+
+```bash
+curl -X POST http://localhost:8000/api/research \
+  -F "question=What are the best practices for deploying LLMs in production?"
 ```
+
+**SSE streaming** — set `Accept: text/event-stream` to receive real-time progress events:
+
+```bash
+curl -X POST http://localhost:8000/api/research \
+  -H "Accept: text/event-stream" \
+  -F "question=What are the best practices for deploying LLMs in production?"
+```
+
+SSE events: `status` (phase/iteration/tool/evidence updates after each node), `plan` (research plan steps), `error`, `complete` (final report + metadata).
 
 ## Docker Services
 
@@ -146,7 +158,7 @@ Options:
 | `api` | 8000 | FastAPI backend (pure JSON API) |
 | `frontend` | 3000 | React SPA served by nginx |
 
-The frontend nginx container proxies `/api/` requests to the backend, so all traffic can go through port 3000.
+The frontend nginx container proxies `/api/` requests to the backend (with `proxy_buffering off` for SSE support), so all traffic can go through port 3000.
 
 ## Tools
 
