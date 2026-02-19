@@ -29,8 +29,8 @@ export default function ReportView({ report }) {
         remarkPlugins={[remarkGfm]}
         components={{
           code({ className, children, ...props }) {
-            const match = /language-(\w+)/.exec(className || "");
-            const language = match ? match[1] : null;
+            const match = /language-(\w+)/i.exec(className || "");
+            const language = match ? match[1].toLowerCase() : null;
 
             if (language === "mermaid") {
               return (
